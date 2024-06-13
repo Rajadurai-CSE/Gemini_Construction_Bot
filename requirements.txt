@@ -1,0 +1,9 @@
+streamlit
+google-generativeai
+python-dotenv
+langchain
+PyPDF
+Faiss-cpu
+langchain_google_genai
+langchain_community
+streamlit_mic_recorder
