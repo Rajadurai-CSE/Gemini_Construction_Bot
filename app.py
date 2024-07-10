@@ -2,61 +2,84 @@ import streamlit as st
 from streamlit_chat import message
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
-import pandas as pd
-from PIL import Image
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains.question_answering import load_qa_chain
+
 from langchain.prompts import ChatPromptTemplate,MessagesPlaceholder
 from langchain.memory import ConversationBufferWindowMemory
 from dotenv import load_dotenv
-import pymupdf   # PyMuPDF
-import pytesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:\\Users\\rajad\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe"
+from langchain.document_loaders import PyPDFLoader
+import replicate
+# import pymupdf   # PyMuPDF
+# import pytesseract
+# pytesseract.pytesseract.tesseract_cmd = r"C:\\Users\\rajad\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe"
 from PIL import Image
 from streamlit_mic_recorder import  speech_to_text
 import io
+import shutil
+from llama_parse import LlamaParse
 from langchain.chains import LLMChain
 load_dotenv()
 os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+
+parser = LlamaParse(
+      # can also be set in your env as LLAMA_CLOUD_API_KEY
+    result_type="text",  # "markdown" and "text" are available
+    verbose=True,
+)
 
 def intialize_session_state():
   if "generated" not in st.session_state:
     st.session_state['generated'] = []
   if 'past' not in st.session_state:
     st.session_state['past'] = []
+  if 'generated_images' not in st.session_state:
+    st.session_state['generated_images'] = {}
   if 'chain' not in st.session_state:
      st.session_state['chain'] = get_conversational_chain()
+  if 'user_input_images' not in st.session_state:
+      st.session_state['user_input_images'] = {}
+      # Initialize session state for vector_store and uploaded_files if not already done
+  if 'vector_store' not in st.session_state:
+        st.session_state.vector_store = None
+  if 'uploaded_files' not in st.session_state:
+        st.session_state.uploaded_files = {}
+  if 'current_image_input' not in st.session_state:
+       st.session_state.current_image_input = []
+    #have it as list and do the necessary operation
 
 
 
-def get_pdf_text(pdf_docs):
+# def get_pdf_text(pdf_docs):
 
-    doc = pymupdf.open(stream=pdf_docs)
-    full_text = ""
+#     doc = pymupdf.open(stream=pdf_docs)
+#     full_text = ""
     
-    for page in doc:
-        text = page.get_text()
-        if text:
-            full_text += text
-        else:
-            for img in page.get_images(full=True):
-                xref = img[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image = Image.open(io.BytesIO(image_bytes))
-                ocr_text = pytesseract.image_to_string(image)
-                full_text += ocr_text
+#     for page in doc:
+#         text = page.get_text()
+#         if text:
+#             full_text += text
+#         else:
+#             for img in page.get_images(full=True):
+#                 xref = img[0]
+#                 base_image = doc.extract_image(xref)
+#                 image_bytes = base_image["image"]
+#                 image = Image.open(io.BytesIO(image_bytes))
+#                 ocr_text = pytesseract.image_to_string(image)
+#                 full_text += ocr_text
+                
 
-    return full_text
+#     return full_text
 
 
 
 def get_text_chunks(text):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     return chunks
 
@@ -67,16 +90,20 @@ def get_vector_store(text_chunks):
     return vector_store
 
 
+
+
 def get_conversational_chain():
+
+    # model = genai.GenerativeModel(model='gemini-1.5-flash')
 
    
 
-    model = ChatGoogleGenerativeAI(model ='gemini-1.5-flash',temperature=0.5,convert_system_message_to_human=True,max_output_tokens=150)
+    model = ChatGoogleGenerativeAI(model ='gemini-1.5-flash',temperature=0.5,convert_system_message_to_human=True)
     # model = ChatGoogleGenerativeAI(model="gemini-pro",temperature=0.3)
 
     prompt_template = ChatPromptTemplate.from_messages(
         [
-            ('system',' You are a construction expert. Your work is to assist contractors, architects , general people who are interested in buying home . Your task will be from providing insights on budgets of new projects, aiding architects in designing to guiding people to buy new home . Provide the audience with relavant information from the given context. If you feel you are not able to fully understand the context, then just say i am not able to answer and provide some alternatives. Be precise, clear to the audience.If there is not context given, then try to answer the question with your general knowledge related to construction Industry, be a friendly answering casual questions but not to questions that are unappropriate to construction industry'),
+            ('system',' You are a construction expert. Your work is to assist contractors, architects , general people who are interested in buying home . Your task will be from providing insights on budgets of new projects, aiding architects in designing to guiding people to buy new home . Provide the audience with relavant information from the given context. You will also be given images which you can analyze and answer. If you feel you are not able to fully understand the context or image, then just say i am not able to answer and provide some alternatives. Be precise, clear to the audience. If there is not context given or image given, then try to answer the question with your general knowledge related to construction Industry, be a friendly answering casual questions but not to questions that are unappropriate to construction industry'),
             MessagesPlaceholder(variable_name='chat_history'),
             ('human','\n{input}')
             
@@ -86,7 +113,7 @@ def get_conversational_chain():
     memory = ConversationBufferWindowMemory(
     memory_key="chat_history",
     return_messages=True,
-    k=10
+    k=3
     )
 
     chain = LLMChain(
@@ -106,7 +133,25 @@ def get_conversational_chain():
     # )
     return chain
 
+#Image Generator Function to Generate Image
 
+
+
+
+def generate_image_fun(prompt):
+    input = {
+    "width": 768,
+    "height": 768,
+    "prompt": prompt,
+    "refine": "expert_ensemble_refiner",
+    "apply_watermark": False,
+    "num_inference_steps": 25
+    }
+    output = replicate.run(
+    "stability-ai/sdxl:7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc",
+    input=input
+    )
+    return output
 
 def load_vectorstore():
     embeddings = GoogleGenerativeAIEmbeddings(model = "models/embedding-001")
@@ -137,16 +182,36 @@ def display_chat_history():
 
   vector_store = st.session_state['vector_store']
   chain = st.session_state['chain']
+  current_images = st.session_state['current_image_input']
+  if current_images:
+      current_image_dict = {
+      'type':'PIL image',
+      'content':current_images
+      }
+  else:
+      current_image_dict = None
 
+      
+#   images = st.session_state['images']
 
   with container:
     text = speech_to_text(start_prompt='Start Recording',stop_prompt='Stop Recording',language='en', use_container_width=True, just_once=True, key='STT')
 
-
     with st.form(key="my_form",clear_on_submit=True):
       user_input = st.text_input("Question:",placeholder="Ask",key='input')
-      submit_button = st.form_submit_button(label="Send")
-   
+      col1,col2 = st.columns(2)
+      with col1:
+          submit_button = st.form_submit_button(label="Send")
+      with col2:
+          generate_image = st.form_submit_button(label='Generate Image')
+
+    if generate_image and user_input!='':
+        with st.spinner("Processing query..."):
+            st.session_state['past'].append(user_input) #Add Image to the prompt
+            returned_image = generate_image_fun(prompt=user_input)
+            st.session_state['generated_images'][len(st.session_state['past'])-1] = returned_image
+            st.session_state['generated'].append("There you go!!")
+
 
     if (submit_button and user_input) or text:
       with st.spinner("Processing query..."):
@@ -158,17 +223,27 @@ def display_chat_history():
         else:
             context = ''
         
-        combined_input = f"Context:\n{context}\nQuestion:\n{user_input}"
+
+        combined_input = f"Context:\n{context}\nQuestion:\n{user_input}\nImages:\n{current_image_dict}" #Add --> User Inputted Images
         output =  chain.invoke({'input':combined_input})
 
         # output = conversation_chat(user_input,context,chain)
-        st.session_state['past'].append(user_input)
+        st.session_state['past'].append(user_input) #Add Image to the prompt
         st.session_state['generated'].append(output['text'])
-     
-        with reply_container:
-            for i in range(len(st.session_state['generated'])):
-                message(st.session_state['past'][i],is_user=True  ,key=str(i)+ "_user",avatar_style="thumbs")
-                message(st.session_state['generated'][i],key = str(i), avatar_style="fun-emoji")
+        st.session_state['current_image_input'] = []
+
+    
+    with reply_container:
+        for i in range(len(st.session_state['generated'])):
+            message(st.session_state['past'][i],is_user=True  ,key=str(i)+ "_user",avatar_style="thumbs")
+            if i in st.session_state['user_input_images'].keys():
+                images = st.session_state['user_input_images'][i]
+                for i in range(len(images)):
+                    st.image(images[i],caption = 'User Input')   
+            message(st.session_state['generated'][i],key = str(i), avatar_style="fun-emoji")
+            if i in st.session_state['generated_images'].keys():
+                st.image(st.session_state['generated_images'][i], caption="Generated Image")
+        
 
 
 def main():
@@ -177,12 +252,9 @@ def main():
     st.set_page_config(page_title="Construction Expert", layout="wide")
     st.header("Construction Expert")
 
-    # Initialize session state for vector_store and uploaded_files if not already done
-    if 'vector_store' not in st.session_state:
-        st.session_state.vector_store = None
-    if 'uploaded_files' not in st.session_state:
-        st.session_state.uploaded_files = {}
-    #have it as list and do the necessary operation
+
+       
+
 
     display_chat_history()
 
@@ -192,18 +264,25 @@ def main():
         pdf_docs = st.file_uploader("Upload your PDF Files and Click on the Submit & Process Button", accept_multiple_files=True)
         
         if pdf_docs:
+            if not os.path.exists('files'):
+                os.makedirs('files')
             for pdf in pdf_docs:
                 if pdf.name not in st.session_state.uploaded_files:
-                    st.session_state.uploaded_files[pdf.name] = pdf
+                    with open(os.path.join("files",pdf.name),"wb") as f:
+                        f.write(pdf.getbuffer())
+                    file_path = os.path.join('files', pdf.name)
+                    st.session_state.uploaded_files[pdf.name] = file_path
 
         if st.button("Submit & Process"):
             if pdf_docs:
                 with st.spinner("Processing..."):
-                    raw_text = ''
-                    for pdf in pdf_docs:
-                        pdf_binary = pdf.read()
-                        raw_text += get_pdf_text(pdf_binary)
-                    text_chunks = get_text_chunks(raw_text)
+                    for file_name, file_path in st.session_state.uploaded_files.items():
+                        doc = PyPDFLoader(file_path)
+                        loader = doc.load()
+                        docs = parser.load_data(file_path)
+                        print(docs) #Metadata --> Source and Markdown to text
+
+                    text_chunks = get_text_chunks(docs[0].text)
                     index = get_vector_store(text_chunks)
                     if index:
                         st.session_state.vector_store = True
@@ -211,7 +290,40 @@ def main():
                     else:
                         st.error("Failed to create vector store")
 
-         
+    with st.sidebar:
+        st.title("Image Input:")
+        user_images = st.file_uploader("Upload your Image Files and Click on the Submit & Process Button", accept_multiple_files=True,type=["jpg", "jpeg", "png"])
+        list_of_images = []
+
+        #Next Work Delete Images from session
+        if st.button("Submit & Process",key='image'):
+            if user_images:
+                with st.spinner("Processing..."):
+                    for i in range(len(user_images)):
+                        image = Image.open(user_images[i])
+                        st.session_state['current_image_input'].append(image)
+                        list_of_images.append(image)
+                    st.success('Done')
+            st.session_state['user_input_images'][len(st.session_state['past'])] = list_of_images
+        
+
+        
+         # Display uploaded files with delete option
+        # st.subheader("Uploaded Files:")
+        # for file_name in st.session_state.uploaded_files.keys():
+        #     col1, col2 = st.columns([4, 1])
+        #     col1.write(file_name)
+        #     if col2.button("Delete", key=file_name):
+        #         os.remove(st.session_state.uploaded_files[file_name])
+        #         del st.session_state.uploaded_files[file_name]
+        #         # delete_vector_store()  # Delete vector store when a file is deleted
+                # st.experimental_rerun()
+
+# Delete Function to delete the faiss index associated with the user document if the user deletes a document
+# Delete Files from files directory after session over
+#      Solution --> When the app starts delete all the files
+#                   Session Persist --> When reloading do not delete the files
+#      Add Delete option to each file and remove from directory
 
 
 

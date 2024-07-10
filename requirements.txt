@@ -7,3 +7,4 @@ Faiss-cpu
 langchain_google_genai
 langchain_community
 streamlit_mic_recorder
+replicate
