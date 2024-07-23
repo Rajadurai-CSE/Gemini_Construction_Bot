@@ -4,19 +4,16 @@
 
 from vector_store import load_vectorstore,get_vector_store
 from chain import get_conversational_chain
+from image_gen import generate_image_fun
+from summarize import summarize,image_prompt_generator
 import markdownify
 import streamlit as st
 from streamlit_chat import message
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
-from langchain.chains.combine_documents.stuff import StuffDocumentsChain
-import google.generativeai as genai
-
 from dotenv import load_dotenv
 from langchain.docstore.document import Document
 from langchain.document_loaders import PyPDFLoader
-import replicate
-from langchain.prompts import PromptTemplate
 # import pymupdf   # PyMuPDF
 # import pytesseract
 # pytesseract.pytesseract.tesseract_cmd = r"C:\\Users\\rajad\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe"
@@ -27,9 +24,6 @@ import shutil
 from llama_parse import LlamaParse
 
 load_dotenv()
-os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-
 
 parser = LlamaParse(
       # can also be set in your env as LLAMA_CLOUD_API_KEY
@@ -46,7 +40,6 @@ def intialize_session_state():
     st.session_state['generated_images'] = {}
   if 'chain' not in st.session_state:
      st.session_state['chain'] = get_conversational_chain()
-      # Initialize session state for vector_store and uploaded_files if not already done
   if 'vector_store' not in st.session_state:
         st.session_state.vector_store = None
   if 'uploaded_files' not in st.session_state:
@@ -55,8 +48,6 @@ def intialize_session_state():
        st.session_state.summary_docs = []
   if 'img_fsum' not in st.session_state:
        st.session_state.img_fsum = []
-    
-    #have it as list and do the necessary operation
 
 
 
@@ -88,66 +79,14 @@ def get_text_chunks(text):
     chunks = text_splitter.split_text(text)
     return chunks
 
-# Function to summarize text using an LLM
-def summarize(docs,filename):
-    
-    prompt_template = """Write a concise summary of the following:" {text}" CONCISE SUMMARY:"""
-    prompt = PromptTemplate.from_template(prompt_template)
-    llm = ChatGoogleGenerativeAI(model = "gemini-1.5-flash")
-    llm_chain = LLMChain(llm=llm,prompt=prompt)
-    stuff_chain = StuffDocumentsChain(llm_chain=llm_chain, document_variable_name="text")
-    response = stuff_chain.invoke(docs)
-    modified_output = f'Summary of the Document {filename} \n\n' + response['output_text']
-    st.session_state['summary_docs'].append(modified_output) 
-    return f"Summary of Documents \n"+ response['output_text']
-
-def image_prompt_generator(content):
-    content = f"From the summary of the document generate image prompt that can be useful to visualize important points \n content : {content}"
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(content)
-    output = generate_image_fun(response.text)
-    st.session_state['img_fsum'].append(output)
-    return
-
-
-
-
-
-
-
-def generate_image_fun(prompt):
-    input = {
-    "width": 768,
-    "height": 768,
-    "prompt": prompt,
-    "refine": "expert_ensemble_refiner",
-    "apply_watermark": False,
-    "num_inference_steps": 25
-    }
-    output = replicate.run(
-    "stability-ai/sdxl:7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc",
-    input=input
-    )
-    return output
-    
-
-
-
-
-
 
 def display_chat_history():
-
   reply_container = st.container()
   container = st.container()
-
   vector_store = st.session_state['vector_store']
   chain = st.session_state['chain']
-
-
   with container:
     text = speech_to_text(start_prompt='Start Recording',stop_prompt='Stop Recording',language='en', use_container_width=True, just_once=True, key='speech')
-
     with st.form(key="my_form",clear_on_submit=True):
       user_input = st.text_input("Question:",placeholder="Ask",key='input')
       col1,col2 = st.columns(2)
@@ -227,8 +166,9 @@ def main():
                         content.extend(text_chunks)
                         doc_content = [Document(page_content=t) for t in text_chunks]
                         summarized = summarize(doc_content,file_name)
-                        print(summarized)
-                        image_prompt_generator(summarized)
+                        st.session_state['summary_docs'].append(summarized) 
+                        img_out  = image_prompt_generator(summarized)
+                        st.session_state['img_fsum'].append(img_out)
             index = get_vector_store(content)
             if index:
                 st.session_state.vector_store = True

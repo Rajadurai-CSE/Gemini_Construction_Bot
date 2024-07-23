@@ -2,6 +2,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import LLMChain
 from langchain.prompts import ChatPromptTemplate,MessagesPlaceholder
 from langchain.memory import ConversationBufferWindowMemory
+from configure import configure
+configure()
+
 def get_conversational_chain():
 
     # model = genai.GenerativeModel(model='gemini-1.5-flash')
