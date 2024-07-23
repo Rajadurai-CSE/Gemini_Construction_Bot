@@ -1,6 +1,7 @@
-#Multi Pdf chats
-#
-
+#Check Search Results
+# Delete Documents function
+# Summary and Image after pdf processed
+import markdownify
 import streamlit as st
 from streamlit_chat import message
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -34,7 +35,7 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 parser = LlamaParse(
       # can also be set in your env as LLAMA_CLOUD_API_KEY
-    result_type="text",  # "markdown" and "text" are available
+    result_type="markdown",  # "markdown" and "text" are available
     verbose=True,
 )
 
@@ -102,7 +103,7 @@ def summarize(docs,filename):
     llm_chain = LLMChain(llm=llm,prompt=prompt)
     stuff_chain = StuffDocumentsChain(llm_chain=llm_chain, document_variable_name="text")
     response = stuff_chain.invoke(docs)
-    modified_output = f'Summary of the Document ${filename} \n\n' + response['output_text']
+    modified_output = f'Summary of the Document {filename} \n\n' + response['output_text']
     st.session_state['summary_docs'].append(modified_output) 
     return f"Summary of Documents \n"+ response['output_text']
 
@@ -241,7 +242,7 @@ def display_chat_history():
             user_input = text
         if vector_store:
             new_db = load_vectorstore()
-            context = new_db.similarity_search(user_input) 
+            context = new_db.similarity_search(user_input,k=1) 
         else:
             context = ''
         
@@ -257,12 +258,6 @@ def display_chat_history():
     
     with reply_container:
 
-        for k in range(len(st.session_state['img_fsum'])):
-              message(st.session_state['summary_docs'][k],is_user=True  ,key=str(k)+ "_sum",avatar_style="thumbs")
-              st.image(st.session_state['img_fsum'][k], caption="Generated Image")
-
-
-
         for i in range(len(st.session_state['generated'])):
             message(st.session_state['past'][i],is_user=True  ,key=str(i)+ "_user",avatar_style="thumbs")
             if i in st.session_state['user_input_images'].keys():
@@ -277,7 +272,6 @@ def display_chat_history():
 
 def main():
     intialize_session_state()
-  
     st.set_page_config(page_title="Construction Expert", layout="wide")
     st.header("Construction Expert")
     display_chat_history()
@@ -294,42 +288,37 @@ def main():
                         f.write(pdf.getbuffer())
                     file_path = os.path.join('files', pdf.name)
                     st.session_state.uploaded_files[pdf.name] = file_path
-         
+        content = []
         if st.button("Submit & Process"):
             if pdf_docs:
                 with st.spinner("Processing..."):
                     for file_name, file_path in st.session_state.uploaded_files.items():
-                        doc = PyPDFLoader(file_path)
+                        # doc = PyPDFLoader(file_path)
                         # loader = doc.load()
                         docs = parser.load_data(file_path)
-                        print(docs) #Metadata --> Source and Markdown to text
+                        # print(docs) #Metadata --> Source and Markdown to text
+                        # markdown_string = markdownify.markdownify(docs[0].text)
+                        # print(markdown_string)
                         text_chunks = get_text_chunks(docs[0].text)
+                        content.extend(text_chunks)
                         doc_content = [Document(page_content=t) for t in text_chunks]
-                        index = get_vector_store(text_chunks)
-                        if index:
-                            summarized = summarize(doc_content,file_name)
-                            print(summarized)
-                            image_prompt_generator(summarized)
-                        else:
-                            st.error("Failed to create vector store")
-            st.session_state.vector_store = True
-            st.success("Done")
+                        summarized = summarize(doc_content,file_name)
+                        print(summarized)
+                        image_prompt_generator(summarized)
+            index = get_vector_store(content)
+            if index:
+                st.session_state.vector_store = True
+                st.success("Done")
+                reply_container = st.container()
+                with reply_container:
+                    for k in range(len(st.session_state['img_fsum'])):
+                        message(st.session_state['summary_docs'][k],is_user=True  ,key=str(k)+ "_sum",avatar_style="thumbs")
+                        st.image(st.session_state['img_fsum'][k], caption="Generated Image")
+            else:
+                st.error("Failed to create vector store")
+           
 
-    with st.sidebar:
-        st.title("Image Input:")
-        user_images = st.file_uploader("Upload your Image Files and Click on the Submit & Process Button", accept_multiple_files=True,type=["jpg", "jpeg", "png"])
-        list_of_images = []
-
-        #Next Work Delete Images from session
-        if st.button("Submit & Process",key='image'):
-            if user_images:
-                with st.spinner("Processing..."):
-                    for i in range(len(user_images)):
-                        image = Image.open(user_images[i])
-                        st.session_state['current_image_input'].append(image)
-                        list_of_images.append(image)
-                    st.success('Done')
-            st.session_state['user_input_images'][len(st.session_state['past'])] = list_of_images
+    
         
 
         
