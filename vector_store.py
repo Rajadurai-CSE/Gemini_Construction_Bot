@@ -9,5 +9,5 @@ def get_vector_store(text_chunks):
 
 def load_vectorstore():
     embeddings = GoogleGenerativeAIEmbeddings(model = "models/embedding-001")
-    db = FAISS.load_local("faiss_index", embeddings)
+    db = FAISS.load_local("faiss_index", embeddings,allow_dangerous_deserialization=True)
     return db
