@@ -1,4 +1,4 @@
-#Check Search Results
+# Check Search Results
 # Delete Documents function
 # Summary and Image after pdf processed
 
@@ -14,9 +14,6 @@ import os
 from dotenv import load_dotenv
 from langchain.docstore.document import Document
 from langchain.document_loaders import PyPDFLoader
-# import pymupdf   # PyMuPDF
-# import pytesseract
-# pytesseract.pytesseract.tesseract_cmd = r"C:\\Users\\rajad\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe"
 from PIL import Image
 from streamlit_mic_recorder import  speech_to_text
 import io
@@ -162,7 +159,12 @@ def main():
                         # print(docs) #Metadata --> Source and Markdown to text
                         # markdown_string = markdownify.markdownify(docs[0].text)
                         # print(markdown_string)
+                        print(docs)
+                        #Edit metadata and add pdf name
+                        #If delete option is prompted delete with pdf name
+                        print('\n')
                         text_chunks = get_text_chunks(docs[0].text)
+                        print(text_chunks)
                         content.extend(text_chunks)
                         doc_content = [Document(page_content=t) for t in text_chunks]
                         summarized = summarize(doc_content,file_name)

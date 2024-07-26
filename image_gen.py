@@ -1,5 +1,14 @@
 import replicate
 def generate_image_fun(prompt):
+    """
+    
+    Image Generation Function to call external image generation api to yield image output to users.
+
+    Args: prompt -> Generate a Prompt addressing user enquiry
+
+    generate_image_fun(prompt)
+
+    """
     input = {
     "width": 768,
     "height": 768,
@@ -9,7 +18,7 @@ def generate_image_fun(prompt):
     "num_inference_steps": 25
     }
     output = replicate.run(
-    "stability-ai/sdxl:7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc",
+    "stability-ai/stable-diffusion-3",
     input=input
     )
     return output

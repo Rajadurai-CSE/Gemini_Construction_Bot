@@ -23,4 +23,5 @@ def image_prompt_generator(content):
     model = genai.GenerativeModel('gemini-1.5-flash')
     response = model.generate_content(content)
     output = generate_image_fun(response.text)
+    print(response.text)
     return output
