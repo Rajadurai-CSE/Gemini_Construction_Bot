@@ -6,7 +6,6 @@ from vector_store import load_vectorstore,get_vector_store
 from chain import get_conversational_chain
 from image_gen import generate_image_fun
 from summarize import summarize,image_prompt_generator
-import markdownify
 import streamlit as st
 from streamlit_chat import message
 from langchain.text_splitter import RecursiveCharacterTextSplitter
