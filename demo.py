@@ -110,7 +110,7 @@ def display_chat_history():
             context = ''
         
 
-        combined_input = f"Context:\n{context}\nQuestion:\n{user_input}\n" #Add --> User Inputted Images
+        combined_input = f"You are archsense, you help architect and construction industry people to get empowered by new technology by assisting them in solving tech related queries. Answer to the question given based on the context or if context not provided provide answer with best of your knowledge .Context:\n{context}\nQuestion:\n{user_input}\n" #Add --> User Inputted Images
         output =  chain.invoke({'input':combined_input})
 
         # output = conversation_chat(user_input,context,chain)
